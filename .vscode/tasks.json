@@ -1,0 +1,85 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Stripe: Iniciar backend + ngrok",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "${workspaceFolder}\\server\\start_stripe_tunnel.ps1"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Flutter: Build APK Stripe (release)",
+      "type": "shell",
+      "command": "flutter",
+      "args": [
+        "build",
+        "apk",
+        "--release",
+        "--dart-define=STRIPE_BACKEND_URL=${input:stripeBackendUrl}",
+        "--dart-define=STRIPE_PUBLISHABLE_KEY=${input:stripePublishableKey}",
+        "--dart-define=STRIPE_PRICE_V8_OUXI_WEEKLY=${input:stripePriceV8OuxiWeekly}",
+        "--dart-define=STRIPE_PRICE_V8_OUXI_MONTHLY=${input:stripePriceV8OuxiMonthly}",
+        "--dart-define=STRIPE_PRICE_V8_PRO_WEEKLY=${input:stripePriceV8ProWeekly}",
+        "--dart-define=STRIPE_PRICE_V8_PRO_MONTHLY=${input:stripePriceV8ProMonthly}",
+        "--dart-define=STRIPE_PRICE_ECO_RIDER_WEEKLY=${input:stripePriceEcoRiderWeekly}",
+        "--dart-define=STRIPE_PRICE_ECO_RIDER_MONTHLY=${input:stripePriceEcoRiderMonthly}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "stripeBackendUrl",
+      "type": "promptString",
+      "description": "URL HTTPS de ngrok (ej: https://xxxx.ngrok-free.dev)"
+    },
+    {
+      "id": "stripePublishableKey",
+      "type": "promptString",
+      "description": "Stripe publishable key (pk_test_...)",
+      "password": true
+    },
+    {
+      "id": "stripePriceV8OuxiWeekly",
+      "type": "promptString",
+      "description": "Stripe Price ID semanal V8 Ouxi (price_...)"
+    },
+    {
+      "id": "stripePriceV8OuxiMonthly",
+      "type": "promptString",
+      "description": "Stripe Price ID mensual V8 Ouxi (price_...)"
+    },
+    {
+      "id": "stripePriceV8ProWeekly",
+      "type": "promptString",
+      "description": "Stripe Price ID semanal V8 Pro (price_...)"
+    },
+    {
+      "id": "stripePriceV8ProMonthly",
+      "type": "promptString",
+      "description": "Stripe Price ID mensual V8 Pro (price_...)"
+    },
+    {
+      "id": "stripePriceEcoRiderWeekly",
+      "type": "promptString",
+      "description": "Stripe Price ID semanal Eco Rider (price_...)"
+    },
+    {
+      "id": "stripePriceEcoRiderMonthly",
+      "type": "promptString",
+      "description": "Stripe Price ID mensual Eco Rider (price_...)"
+    }
+  ]
+}

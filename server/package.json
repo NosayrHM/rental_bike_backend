@@ -1,0 +1,25 @@
+{
+  "name": "gobike-stripe-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs --env production",
+    "pm2:save": "pm2 save",
+    "pm2:logs": "pm2 logs gobike-backend"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1",
+    "stripe": "^16.6.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.7"
+  }
+}
