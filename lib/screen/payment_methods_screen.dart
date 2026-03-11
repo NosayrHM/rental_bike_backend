@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'add_card_screen.dart';
 import '../services/payment_method_service.dart';
 
 class PaymentMethodsScreen extends StatefulWidget {
@@ -11,6 +10,7 @@ class PaymentMethodsScreen extends StatefulWidget {
 
 class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
   List<SavedPaymentCard> _cards = const <SavedPaymentCard>[];
+  bool _addingCard = false;
 
   @override
   void initState() {
@@ -28,20 +28,40 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
     });
   }
 
-  Future<void> _openAddCardScreen() async {
-    final result = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (context) => const AddCardScreen(),
-      ),
-    );
-    if (result == true) {
-      // Si se eliminó la última tarjeta, forzar refresco al volver
-      _loadCards();
-      if (Navigator.of(context).canPop()) {
-        Navigator.of(context).pop(true); // true = hubo cambio relevante
+  Future<void> _addCardDirectly() async {
+    if (_addingCard) {
+      return;
+    }
+
+    setState(() {
+      _addingCard = true;
+    });
+
+    try {
+      await PaymentMethodService.instance.addCardWithStripeVerification();
+      await _loadCards();
+
+      if (!mounted) {
+        return;
       }
-    } else {
-      _loadCards();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Tarjeta verificada y guardada correctamente.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo guardar la tarjeta: $error')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _addingCard = false;
+        });
+      }
     }
   }
 
@@ -87,17 +107,26 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                 ),
-                onPressed: _openAddCardScreen,
-                child: const Align(
+                onPressed: _addingCard ? null : _addCardDirectly,
+                child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Añadir una tarjeta nueva',
-                    style: TextStyle(
-                      color: Color.fromARGB(255, 255, 255, 255),
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: _addingCard
+                      ? const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text(
+                          'Añadir una tarjeta nueva',
+                          style: TextStyle(
+                            color: Color.fromARGB(255, 255, 255, 255),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                 ),
               ),
             ),
