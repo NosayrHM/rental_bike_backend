@@ -54,29 +54,16 @@ class _AddCardScreenState extends State<AddCardScreen> {
   }
 
   Future<void> _handleSave() async {
-    if (!_isManualCardValid()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Completa número, fecha (MM/AA) y CVC para continuar.'),
-        ),
-      );
-      return;
-    }
-
     setState(() {
       _saving = true;
     });
     try {
-      await PaymentMethodService.instance.addManualCard(
-        cardNumber: _cardNumberController.text,
-        expiry: _expiryController.text.trim(),
-        cvc: _cvcController.text.trim(),
-      );
+      await PaymentMethodService.instance.addCardWithStripeVerification();
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Método de pago guardado correctamente.')),
+        const SnackBar(content: Text('Tarjeta verificada y guardada correctamente.')),
       );
       Navigator.of(context).pop(true);
     } catch (error) {
@@ -93,17 +80,6 @@ class _AddCardScreenState extends State<AddCardScreen> {
         });
       }
     }
-  }
-
-  bool _isManualCardValid() {
-    final number = _cardNumberController.text.replaceAll(RegExp(r'\s+'), '');
-    final expiry = _expiryController.text.trim();
-    final cvc = _cvcController.text.trim();
-
-    final numberOk = RegExp(r'^\d{13,19}$').hasMatch(number);
-    final expiryOk = RegExp(r'^(0[1-9]|1[0-2])\/\d{2}$').hasMatch(expiry);
-    final cvcOk = RegExp(r'^\d{3,4}$').hasMatch(cvc);
-    return numberOk && expiryOk && cvcOk;
   }
 
   @override
@@ -225,7 +201,7 @@ class _AddCardScreenState extends State<AddCardScreen> {
               ),
               const SizedBox(height: 18),
               const Text(
-                'Usa una tarjeta de prueba de Stripe (por ejemplo 4242 4242 4242 4242).',
+                'Al guardar, Stripe abrira una verificacion segura con tu banco (3D Secure cuando aplique).',
                 style: TextStyle(fontSize: 14, color: Colors.black54),
               ),
               const SizedBox(height: 24),

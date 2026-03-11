@@ -2,6 +2,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'user_service.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter/material.dart';
+import 'package:flutter_stripe/flutter_stripe.dart';
+import 'stripe_service.dart';
 
 /// Persists the payment method setup state using shared preferences.
 class PaymentMethodService {
@@ -87,6 +90,49 @@ class PaymentMethodService {
 
     await _saveCards(cards, user.email);
     await setHasPaymentMethod(cards.isNotEmpty);
+  }
+
+  /// Usa Stripe SetupIntent + PaymentSheet para guardar la tarjeta con
+  /// autenticación bancaria (3DS) cuando el emisor la requiere.
+  Future<void> addCardWithStripeVerification() async {
+    final user = UserService().currentUser;
+    if (user == null) throw Exception('Usuario no autenticado');
+
+    final token = await UserService().getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('Sesion no valida. Inicia sesion de nuevo.');
+    }
+
+    await StripeService.instance.ensureInitialized();
+
+    final setupData = await _createStripeSetupIntent(token);
+    final setupIntentClientSecret =
+        setupData['setupIntentClientSecret'] as String? ?? '';
+    final customerId = setupData['customer'] as String? ?? '';
+    final ephemeralKey = setupData['ephemeralKey'] as String? ?? '';
+
+    if (setupIntentClientSecret.isEmpty ||
+        customerId.isEmpty ||
+        ephemeralKey.isEmpty) {
+      throw Exception('Respuesta incompleta del backend al iniciar Stripe.');
+    }
+
+    await Stripe.instance.initPaymentSheet(
+      paymentSheetParameters: SetupPaymentSheetParameters(
+        merchantDisplayName: 'RentalBike',
+        setupIntentClientSecret: setupIntentClientSecret,
+        customerId: customerId,
+        customerEphemeralKeySecret: ephemeralKey,
+        style: ThemeMode.system,
+        allowsDelayedPaymentMethods: false,
+      ),
+    );
+
+    await Stripe.instance.presentPaymentSheet();
+
+    final syncedCards = await _syncCardsFromStripe(token);
+    await _saveCards(syncedCards, user.email);
+    await setHasPaymentMethod(syncedCards.isNotEmpty);
   }
 
   Future<void> removeCard(SavedPaymentCard card) async {
@@ -187,6 +233,48 @@ class PaymentMethodService {
     if (response.statusCode >= 400) {
       throw Exception('No se pudo eliminar en backend: ${response.body}');
     }
+  }
+
+  Future<Map<String, dynamic>> _createStripeSetupIntent(String token) async {
+    final baseUrl = UserService().getBackendBaseUrl();
+    final uri = Uri.parse('$baseUrl/payment-methods/setup-intent');
+    final response = await http.post(
+      uri,
+      headers: <String, String>{
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(<String, dynamic>{}),
+    );
+
+    if (response.statusCode >= 400) {
+      throw Exception('No se pudo iniciar la verificacion de tarjeta: ${response.body}');
+    }
+
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<List<SavedPaymentCard>> _syncCardsFromStripe(String token) async {
+    final baseUrl = UserService().getBackendBaseUrl();
+    final uri = Uri.parse('$baseUrl/payment-methods/sync-stripe');
+    final response = await http.post(
+      uri,
+      headers: <String, String>{
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(<String, dynamic>{}),
+    );
+
+    if (response.statusCode >= 400) {
+      throw Exception('No se pudieron sincronizar las tarjetas de Stripe: ${response.body}');
+    }
+
+    final payload = jsonDecode(response.body) as Map<String, dynamic>;
+    return (payload['cards'] as List<dynamic>? ?? <dynamic>[])
+        .whereType<Map<String, dynamic>>()
+        .map(SavedPaymentCard.fromJson)
+        .toList();
   }
 
   String _detectBrand(String digits) {

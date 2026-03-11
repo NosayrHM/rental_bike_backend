@@ -227,6 +227,7 @@ async function ensureSchema() {
   `);
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE;');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(120);');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS email_verification_tokens (
       id BIGSERIAL PRIMARY KEY,
@@ -240,6 +241,7 @@ async function ensureSchema() {
   await pool.query('CREATE INDEX IF NOT EXISTS idx_email_verification_user_id ON email_verification_tokens (user_id);');
   await pool.query('CREATE UNIQUE INDEX IF NOT EXISTS idx_email_verification_token_hash ON email_verification_tokens (token_hash);');
   await pool.query('CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);');
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_users_stripe_customer_id ON users (stripe_customer_id);');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS payment_methods (
       id BIGSERIAL PRIMARY KEY,
@@ -254,6 +256,46 @@ async function ensureSchema() {
     );
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_payment_methods_user_id ON payment_methods (user_id);');
+}
+
+function formatStripeExpiry(month, year) {
+  const mm = String(month).padStart(2, '0');
+  const yy = String(year).slice(-2);
+  return `${mm}/${yy}`;
+}
+
+async function getOrCreateStripeCustomerForUser(userId) {
+  const userResult = await pool.query(
+    'SELECT id, email, name, stripe_customer_id FROM users WHERE id = $1',
+    [userId],
+  );
+  if (userResult.rowCount === 0) {
+    throw Object.assign(new Error('Usuario no encontrado'), { statusCode: 404 });
+  }
+
+  const user = userResult.rows[0];
+  const customerId = String(user.stripe_customer_id ?? '').trim();
+  if (customerId) {
+    const customer = await stripe.customers.retrieve(customerId);
+    if (!customer.deleted) {
+      return customer;
+    }
+  }
+
+  const created = await stripe.customers.create({
+    email: user.email,
+    name: user.name || undefined,
+    metadata: {
+      app_user_id: String(user.id),
+    },
+  });
+
+  await pool.query(
+    'UPDATE users SET stripe_customer_id = $1, updated_at = NOW() WHERE id = $2',
+    [created.id, user.id],
+  );
+
+  return created;
 }
 
 function toPublicUser(row) {
@@ -489,6 +531,131 @@ app.post('/payment-methods', async (req, res) => {
   } catch (error) {
     console.error('Save payment method error', error);
     res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+app.post('/payment-methods/setup-intent', async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (userId == null) {
+    return;
+  }
+
+  try {
+    if (!requireStripe(res)) {
+      return;
+    }
+
+    const customer = await getOrCreateStripeCustomerForUser(userId);
+
+    const ephemeralKey = await stripe.ephemeralKeys.create(
+      { customer: customer.id },
+      { apiVersion: '2023-10-16' },
+    );
+
+    const setupIntent = await stripe.setupIntents.create({
+      customer: customer.id,
+      payment_method_types: ['card'],
+      usage: 'off_session',
+      metadata: {
+        app_user_id: String(userId),
+      },
+    });
+
+    return res.status(200).json({
+      setupIntentClientSecret: setupIntent.client_secret,
+      customer: customer.id,
+      ephemeralKey: ephemeralKey.secret,
+    });
+  } catch (error) {
+    console.error('Create payment method setup-intent error', error);
+    const status = error.statusCode ?? 500;
+    const message = error.message ?? 'Error interno';
+    return res.status(status).json({ error: message });
+  }
+});
+
+app.post('/payment-methods/sync-stripe', async (req, res) => {
+  const userId = getAuthenticatedUserId(req, res);
+  if (userId == null) {
+    return;
+  }
+
+  try {
+    if (!requireStripe(res)) {
+      return;
+    }
+
+    const customer = await getOrCreateStripeCustomerForUser(userId);
+
+    const methods = await stripe.paymentMethods.list({
+      customer: customer.id,
+      type: 'card',
+      limit: 100,
+    });
+
+    for (const method of methods.data) {
+      const card = method.card;
+      if (!card || !card.last4 || !card.exp_month || !card.exp_year) {
+        continue;
+      }
+
+      const brand = (card.brand || 'card').toUpperCase();
+      const expiry = formatStripeExpiry(card.exp_month, card.exp_year);
+
+      await pool.query(
+        `
+          INSERT INTO payment_methods (user_id, payment_method_id, brand, last4, expiry, updated_at)
+          VALUES ($1, $2, $3, $4, $5, NOW())
+          ON CONFLICT (user_id, payment_method_id)
+          DO UPDATE SET
+            brand = EXCLUDED.brand,
+            last4 = EXCLUDED.last4,
+            expiry = EXCLUDED.expiry,
+            updated_at = NOW()
+        `,
+        [userId, method.id, brand, card.last4, expiry],
+      );
+    }
+
+    if (methods.data.length > 0) {
+      const keepIds = methods.data.map((m) => m.id);
+      await pool.query(
+        'DELETE FROM payment_methods WHERE user_id = $1 AND payment_method_id <> ALL($2::text[])',
+        [userId, keepIds],
+      );
+    } else {
+      await pool.query('DELETE FROM payment_methods WHERE user_id = $1', [userId]);
+    }
+
+    const result = await pool.query(
+      `
+        SELECT
+          brand,
+          last4,
+          expiry,
+          payment_method_id,
+          (EXTRACT(EPOCH FROM created_at) * 1000)::BIGINT AS created_at_millis
+        FROM payment_methods
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+      `,
+      [userId],
+    );
+
+    return res.status(200).json({
+      cards: result.rows.map((row) => ({
+        brand: row.brand,
+        last4: row.last4,
+        expiry: row.expiry,
+        paymentMethodId: row.payment_method_id,
+        createdAtMillis: Number(row.created_at_millis),
+      })),
+    });
+  } catch (error) {
+    console.error('Sync stripe payment methods error', error);
+    const status = error.statusCode ?? 500;
+    const message = error.message ?? 'Error interno';
+    return res.status(status).json({ error: message });
   }
 });
 
