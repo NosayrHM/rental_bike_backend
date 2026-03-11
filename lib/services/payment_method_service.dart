@@ -111,18 +111,18 @@ class PaymentMethodService {
     final customerId = setupData['customer'] as String? ?? '';
     final ephemeralKey = setupData['ephemeralKey'] as String? ?? '';
 
-    if (setupIntentClientSecret.isEmpty ||
-        customerId.isEmpty ||
-        ephemeralKey.isEmpty) {
+    if (setupIntentClientSecret.isEmpty) {
       throw Exception('Respuesta incompleta del backend al iniciar Stripe.');
     }
+
+    final hasCustomerContext = customerId.isNotEmpty && ephemeralKey.isNotEmpty;
 
     await Stripe.instance.initPaymentSheet(
       paymentSheetParameters: SetupPaymentSheetParameters(
         merchantDisplayName: 'RentalBike',
         setupIntentClientSecret: setupIntentClientSecret,
-        customerId: customerId,
-        customerEphemeralKeySecret: ephemeralKey,
+        customerId: hasCustomerContext ? customerId : null,
+        customerEphemeralKeySecret: hasCustomerContext ? ephemeralKey : null,
         style: ThemeMode.system,
         allowsDelayedPaymentMethods: false,
       ),
@@ -237,15 +237,33 @@ class PaymentMethodService {
 
   Future<Map<String, dynamic>> _createStripeSetupIntent(String token) async {
     final baseUrl = UserService().getBackendBaseUrl();
-    final uri = Uri.parse('$baseUrl/payment-methods/setup-intent');
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+
+    final primaryUri = Uri.parse('$baseUrl/payment-methods/setup-intent');
     final response = await http.post(
-      uri,
-      headers: <String, String>{
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
+      primaryUri,
+      headers: headers,
       body: jsonEncode(<String, dynamic>{}),
     );
+
+    if (response.statusCode == 404) {
+      // Compatibilidad con backend anterior al endpoint autenticado.
+      final legacyUri = Uri.parse('$baseUrl/create-setup-intent');
+      final legacyResponse = await http.post(
+        legacyUri,
+        headers: headers,
+        body: jsonEncode(<String, dynamic>{}),
+      );
+
+      if (legacyResponse.statusCode >= 400) {
+        throw Exception('No se pudo iniciar la verificacion de tarjeta: ${legacyResponse.body}');
+      }
+
+      return jsonDecode(legacyResponse.body) as Map<String, dynamic>;
+    }
 
     if (response.statusCode >= 400) {
       throw Exception('No se pudo iniciar la verificacion de tarjeta: ${response.body}');
@@ -265,6 +283,11 @@ class PaymentMethodService {
       },
       body: jsonEncode(<String, dynamic>{}),
     );
+
+    if (response.statusCode == 404) {
+      // Si el backend aun no tiene sync-stripe, recargar listado actual.
+      return _fetchCardsFromBackend(token);
+    }
 
     if (response.statusCode >= 400) {
       throw Exception('No se pudieron sincronizar las tarjetas de Stripe: ${response.body}');
