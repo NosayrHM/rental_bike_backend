@@ -2,7 +2,7 @@ databases:
   - name: gobike-postgres
     databaseName: gobike
     user: gobike_user
-    plan: starter
+    plan: basic-256mb
 
 services:
   - type: web
