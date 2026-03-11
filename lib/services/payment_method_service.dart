@@ -12,8 +12,8 @@ class PaymentMethodService {
 
   static final PaymentMethodService instance = PaymentMethodService._();
 
-    // Removed unused _hasPaymentMethodKey
-    static const String _savedCardsKeyPrefix = 'saved_payment_cards_v1_';
+  static const String _hasPaymentMethodKey = 'has_payment_method_v2';
+  static const String _savedCardsKeyPrefix = 'saved_payment_cards_v1_';
 
   Future<List<SavedPaymentCard>> getSavedCards() async {
     final user = UserService().currentUser;
@@ -130,9 +130,14 @@ class PaymentMethodService {
 
     await Stripe.instance.presentPaymentSheet();
 
+    // El setup fue confirmado por Stripe (incluye 3DS cuando aplica).
+    // Marcamos estado para desbloquear flujo aunque la sync remota vaya con retraso.
+    await setHasPaymentMethod(true);
+
     final syncedCards = await _syncCardsFromStripe(token);
-    await _saveCards(syncedCards, user.email);
-    await setHasPaymentMethod(syncedCards.isNotEmpty);
+    if (syncedCards.isNotEmpty) {
+      await _saveCards(syncedCards, user.email);
+    }
   }
 
   Future<void> removeCard(SavedPaymentCard card) async {
@@ -161,11 +166,19 @@ class PaymentMethodService {
 
   Future<bool> hasPaymentMethod() async {
     final cards = await getSavedCards();
-    return cards.isNotEmpty;
+    if (cards.isNotEmpty) {
+      await setHasPaymentMethod(true);
+      return true;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_hasPaymentMethodKey) ?? false;
   }
 
-  // setHasPaymentMethod ya no es necesario, pero se deja vacío para compatibilidad
-  Future<void> setHasPaymentMethod(bool value) async {}
+  Future<void> setHasPaymentMethod(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_hasPaymentMethodKey, value);
+  }
 
   Future<void> _saveCards(List<SavedPaymentCard> cards, String email) async {
     final prefs = await SharedPreferences.getInstance();
