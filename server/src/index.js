@@ -43,6 +43,7 @@ const emailVerificationRequired = (process.env.EMAIL_VERIFICATION_REQUIRED ?? 't
 const resendApiKey = process.env.RESEND_API_KEY ?? '';
 const emailFrom = process.env.EMAIL_FROM ?? '';
 const appPublicBaseUrl = process.env.APP_PUBLIC_BASE_URL ?? '';
+const appAuthCallbackUrl = process.env.APP_AUTH_CALLBACK_URL ?? 'myapp://auth-callback';
 
 function isEmailDeliveryConfigured() {
   return Boolean(resendApiKey && emailFrom);
@@ -53,6 +54,57 @@ function getBaseUrl(req) {
     return appPublicBaseUrl.replace(/\/$/, '');
   }
   return `${req.protocol}://${req.get('host')}`;
+}
+
+function buildAuthCallbackUrl({ verified, reason }) {
+  const normalized = String(appAuthCallbackUrl || '').trim() || 'myapp://auth-callback';
+
+  try {
+    const url = new URL(normalized);
+    url.searchParams.set('type', 'signup');
+    url.searchParams.set('verified', verified ? '1' : '0');
+    if (reason) {
+      url.searchParams.set('reason', reason);
+    }
+    return url.toString();
+  } catch {
+    const separator = normalized.includes('?') ? '&' : '?';
+    const params = new URLSearchParams({
+      type: 'signup',
+      verified: verified ? '1' : '0',
+      ...(reason ? { reason } : {}),
+    });
+    return `${normalized}${separator}${params.toString()}`;
+  }
+}
+
+function sendVerificationRedirectPage(res, { verified, reason, message }) {
+  const callbackUrl = buildAuthCallbackUrl({ verified, reason });
+  const statusTitle = verified ? 'Correo verificado' : 'No se pudo verificar el correo';
+  const safeMessage = message || (verified
+    ? 'Tu correo fue verificado. Abre la app para iniciar sesion.'
+    : 'El enlace es invalido o ya expiro. Solicita uno nuevo desde la app.');
+
+  res
+    .status(verified ? 200 : 400)
+    .type('html')
+    .send(`<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>${statusTitle}</title>
+    <meta http-equiv="refresh" content="0;url=${callbackUrl}" />
+  </head>
+  <body style="font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0;">
+    <main style="max-width: 560px; margin: 48px auto; padding: 24px; background: #111827; border-radius: 12px;">
+      <h1 style="margin-top: 0;">${statusTitle}</h1>
+      <p>${safeMessage}</p>
+      <p>Si la app no se abre automaticamente, pulsa este boton:</p>
+      <p><a href="${callbackUrl}" style="display: inline-block; background: #22c55e; color: #0b1220; padding: 10px 16px; border-radius: 8px; text-decoration: none; font-weight: 700;">Volver a la app</a></p>
+    </main>
+  </body>
+</html>`);
 }
 
 function hashToken(rawToken) {
@@ -468,7 +520,11 @@ app.get('/auth/v1/verify-email', async (req, res) => {
   try {
     const rawToken = String(req.query.token ?? '');
     if (!rawToken) {
-      return res.status(400).send('Token faltante');
+      return sendVerificationRedirectPage(res, {
+        verified: false,
+        reason: 'missing_token',
+        message: 'Falta el token de verificacion. Solicita un nuevo correo desde la app.',
+      });
     }
 
     const tokenHash = hashToken(rawToken);
@@ -481,22 +537,38 @@ app.get('/auth/v1/verify-email', async (req, res) => {
       [tokenHash],
     );
     if (tokenResult.rowCount === 0) {
-      return res.status(400).send('Token inválido');
+      return sendVerificationRedirectPage(res, {
+        verified: false,
+        reason: 'invalid_token',
+        message: 'El enlace de verificacion no es valido. Solicita uno nuevo desde la app.',
+      });
     }
 
     const tokenRow = tokenResult.rows[0];
     const expired = new Date(tokenRow.expires_at).getTime() < Date.now();
     if (tokenRow.used_at || expired) {
-      return res.status(400).send('Token expirado o ya utilizado');
+      return sendVerificationRedirectPage(res, {
+        verified: false,
+        reason: tokenRow.used_at ? 'already_used' : 'expired',
+        message: 'El enlace ya fue usado o expiro. Solicita un nuevo correo desde la app.',
+      });
     }
 
     await pool.query('UPDATE users SET email_verified = TRUE, email_verified_at = NOW(), updated_at = NOW() WHERE id = $1', [tokenRow.user_id]);
     await pool.query('UPDATE email_verification_tokens SET used_at = NOW() WHERE id = $1', [tokenRow.id]);
 
-    res.status(200).send('Correo verificado correctamente. Ya puedes iniciar sesión.');
+    return sendVerificationRedirectPage(res, {
+      verified: true,
+      reason: 'ok',
+      message: 'Correo verificado correctamente. Te redirigimos a la app para iniciar sesion.',
+    });
   } catch (error) {
     console.error('Verify email error', error);
-    res.status(500).send('Error interno');
+    return sendVerificationRedirectPage(res, {
+      verified: false,
+      reason: 'server_error',
+      message: 'Error interno verificando el correo. Intenta de nuevo en unos minutos.',
+    });
   }
 });
 
