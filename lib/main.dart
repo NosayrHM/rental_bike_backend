@@ -17,6 +17,11 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'GoBike',
+      locale: const Locale('es', 'ES'),
+      supportedLocales: const <Locale>[
+        Locale('es', 'ES'),
+        Locale('es'),
+      ],
       home: SplashScreenWrapper(),
     );
   }
