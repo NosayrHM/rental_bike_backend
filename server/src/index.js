@@ -137,7 +137,7 @@ async function sendVerificationEmail({ to, verificationUrl }) {
     body: JSON.stringify({
       from: emailFrom,
       to: [to],
-      subject: 'Verifica tu correo en GoBike',
+      subject: 'Verifica tu correo en RentalBike',
       html: `
         <div style="font-family: Arial, sans-serif; color: #111827; max-width: 560px;">
           <h2 style="margin-bottom: 8px;">Confirma tu correo</h2>
@@ -150,7 +150,7 @@ async function sendVerificationEmail({ to, verificationUrl }) {
           <p>Este enlace expira en ${emailVerificationExpiryHours} hora(s).</p>
         </div>
       `,
-      text: `Confirma tu correo en GoBike. Pulsa aqui para verificar: ${verificationUrl}\nEste enlace expira en ${emailVerificationExpiryHours} hora(s).`,
+      text: `Confirma tu correo en RentalBike. Pulsa aqui para verificar: ${verificationUrl}\nEste enlace expira en ${emailVerificationExpiryHours} hora(s).`,
     }),
   });
 
