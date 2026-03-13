@@ -6,7 +6,12 @@ import 'main_menu_screen.dart';
 import 'animated_intro_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({
+    super.key,
+    this.initialEmail,
+  });
+
+  final String? initialEmail;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -17,6 +22,15 @@ class _LoginScreenState extends State<LoginScreen> {
   final passwordController = TextEditingController();
   bool _showPassword = false;
   String? errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    final initialEmail = widget.initialEmail?.trim() ?? '';
+    if (initialEmail.isNotEmpty) {
+      emailController.text = initialEmail;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

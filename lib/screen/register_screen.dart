@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'email_verification_pending_screen.dart';
+import 'login_screen.dart';
 import '../services/user_service.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -18,6 +19,36 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final phoneController = TextEditingController();
   String? errorText;
   bool _submitting = false;
+
+  Future<void> _goToLoginForExistingEmail(String email) async {
+    final shouldGo = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Correo ya registrado'),
+        content: const Text(
+          'Ese correo ya tiene cuenta. Usa Iniciar sesion para entrar.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Ir a iniciar sesión'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldGo == true && mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => LoginScreen(initialEmail: email),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -260,13 +291,21 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 setState(() {
                                   errorText = 'El correo ya está registrado o hubo un error.';
                                 });
+                                await _goToLoginForExistingEmail(email);
                               } catch (e) {
                                 if (!mounted) {
                                   return;
                                 }
+                                final message = e
+                                    .toString()
+                                    .replaceFirst('Exception: ', '');
                                 setState(() {
-                                  errorText = e.toString().replaceFirst('Exception: ', '');
+                                  errorText = message;
                                 });
+                                if (message.toLowerCase().contains('ya está registrado') ||
+                                    message.toLowerCase().contains('ya esta registrado')) {
+                                  await _goToLoginForExistingEmail(email);
+                                }
                               } finally {
                                 if (mounted) {
                                   setState(() {
