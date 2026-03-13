@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'login_screen.dart';
+import 'email_verification_pending_screen.dart';
 import '../services/user_service.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -17,6 +17,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final lastNameController = TextEditingController();
   final phoneController = TextEditingController();
   String? errorText;
+  bool _submitting = false;
 
   @override
   Widget build(BuildContext context) {
@@ -195,60 +196,95 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           side: BorderSide(color: Colors.black, width: 2),
                         ),
                       ),
-                      onPressed: () async {
-                        final name = nameController.text.trim();
-                        final lastName = lastNameController.text.trim();
-                        final email = emailController.text.trim();
-                        final password = passwordController.text;
-                        final phone = phoneController.text.trim();
-                        setState(() {
-                          errorText = null;
-                        });
-                        if (name.isEmpty || lastName.isEmpty || phone.isEmpty) {
-                          setState(() {
-                            errorText = 'Faltan campos por rellenar';
-                          });
-                        } else if (email.isEmpty || !email.contains('@')) {
-                          setState(() {
-                            errorText = 'Introduce un correo válido.';
-                          });
-                        } else if (password.isEmpty || password.length < 6) {
-                          setState(() {
-                            errorText = 'La contraseña debe tener al menos 6 caracteres.';
-                          });
-                        } else {
-                          try {
-                            // Registro real contra backend
-                            final registered = await UserService().registerUser(
-                              name: '$name $lastName',
-                              email: email,
-                              password: password,
-                              phone: phone,
-                            );
-                            if (registered) {
-                              if (!mounted) {
+                      onPressed: _submitting
+                          ? null
+                          : () async {
+                              if (_submitting) {
                                 return;
                               }
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Registro exitoso. Revisa tu correo y luego inicia sesión.')),
-                              );
-                              Navigator.of(context).pushAndRemoveUntil(
-                                MaterialPageRoute(builder: (_) => LoginScreen()),
-                                (route) => false,
-                              );
-                            } else {
+
                               setState(() {
-                                errorText = 'El correo ya está registrado o hubo un error.';
+                                _submitting = true;
+                                errorText = null;
                               });
-                            }
-                          } catch (e) {
-                            setState(() {
-                              errorText = e.toString().replaceFirst('Exception: ', '');
-                            });
-                          }
-                        }
-                      },
-                      child: const Text('Registrarse'),
+
+                              final name = nameController.text.trim();
+                              final lastName = lastNameController.text.trim();
+                              final email = emailController.text.trim();
+                              final password = passwordController.text;
+                              final phone = phoneController.text.trim();
+
+                              if (name.isEmpty || lastName.isEmpty || phone.isEmpty) {
+                                setState(() {
+                                  errorText = 'Faltan campos por rellenar';
+                                  _submitting = false;
+                                });
+                                return;
+                              }
+                              if (email.isEmpty || !email.contains('@')) {
+                                setState(() {
+                                  errorText = 'Introduce un correo válido.';
+                                  _submitting = false;
+                                });
+                                return;
+                              }
+                              if (password.isEmpty || password.length < 6) {
+                                setState(() {
+                                  errorText = 'La contraseña debe tener al menos 6 caracteres.';
+                                  _submitting = false;
+                                });
+                                return;
+                              }
+
+                              try {
+                                final registered = await UserService().registerUser(
+                                  name: '$name $lastName',
+                                  email: email,
+                                  password: password,
+                                  phone: phone,
+                                );
+
+                                if (!mounted) {
+                                  return;
+                                }
+
+                                if (registered) {
+                                  Navigator.of(context).pushReplacement(
+                                    MaterialPageRoute(
+                                      builder: (_) => EmailVerificationPendingScreen(email: email),
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                setState(() {
+                                  errorText = 'El correo ya está registrado o hubo un error.';
+                                });
+                              } catch (e) {
+                                if (!mounted) {
+                                  return;
+                                }
+                                setState(() {
+                                  errorText = e.toString().replaceFirst('Exception: ', '');
+                                });
+                              } finally {
+                                if (mounted) {
+                                  setState(() {
+                                    _submitting = false;
+                                  });
+                                }
+                              }
+                            },
+                      child: _submitting
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Text('Registrarse'),
                     ),
                   ),
                 ],
