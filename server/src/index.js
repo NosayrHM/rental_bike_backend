@@ -45,13 +45,25 @@ const emailFrom = process.env.EMAIL_FROM ?? '';
 const appPublicBaseUrl = process.env.APP_PUBLIC_BASE_URL ?? '';
 const appAuthCallbackUrl = process.env.APP_AUTH_CALLBACK_URL ?? 'myapp://auth-callback';
 
+function normalizeConfiguredBaseUrl(rawValue) {
+  const trimmed = String(rawValue ?? '').trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  // Soporta valores pegados por error como "APP_PUBLIC_BASE_URL=https://...".
+  const sanitized = trimmed.replace(/^APP_PUBLIC_BASE_URL\s*=\s*/i, '').replace(/^['"]|['"]$/g, '').trim();
+  return sanitized.replace(/\/$/, '');
+}
+
 function isEmailDeliveryConfigured() {
   return Boolean(resendApiKey && emailFrom);
 }
 
 function getBaseUrl(req) {
-  if (appPublicBaseUrl) {
-    return appPublicBaseUrl.replace(/\/$/, '');
+  const configuredBaseUrl = normalizeConfiguredBaseUrl(appPublicBaseUrl);
+  if (configuredBaseUrl) {
+    return configuredBaseUrl;
   }
   return `${req.protocol}://${req.get('host')}`;
 }
@@ -127,12 +139,18 @@ async function sendVerificationEmail({ to, verificationUrl }) {
       to: [to],
       subject: 'Verifica tu correo en GoBike',
       html: `
-        <h2>Confirma tu correo</h2>
-        <p>Para activar tu cuenta, pulsa el siguiente enlace:</p>
-        <p><a href="${verificationUrl}">${verificationUrl}</a></p>
-        <p>Este enlace expira en ${emailVerificationExpiryHours} hora(s).</p>
+        <div style="font-family: Arial, sans-serif; color: #111827; max-width: 560px;">
+          <h2 style="margin-bottom: 8px;">Confirma tu correo</h2>
+          <p style="margin-top: 0;">Para activar tu cuenta, pulsa el botón:</p>
+          <p style="margin: 18px 0;">
+            <a href="${verificationUrl}" style="display:inline-block;background:#1C6FFF;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700;">Pulsa aqui para verificar</a>
+          </p>
+          <p>Si el botón no funciona, copia y abre este enlace:</p>
+          <p><a href="${verificationUrl}">${verificationUrl}</a></p>
+          <p>Este enlace expira en ${emailVerificationExpiryHours} hora(s).</p>
+        </div>
       `,
-      text: `Confirma tu correo en GoBike: ${verificationUrl}\nEste enlace expira en ${emailVerificationExpiryHours} hora(s).`,
+      text: `Confirma tu correo en GoBike. Pulsa aqui para verificar: ${verificationUrl}\nEste enlace expira en ${emailVerificationExpiryHours} hora(s).`,
     }),
   });
 
