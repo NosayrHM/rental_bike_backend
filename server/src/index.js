@@ -351,11 +351,20 @@ app.post('/auth/v1/signup', async (req, res) => {
     const user = inserted.rows[0];
     let verificationEmailSent = false;
     if (emailVerificationRequired) {
-      verificationEmailSent = await issueVerificationEmail({
-        req,
-        userId: user.id,
-        email: user.email,
-      });
+      try {
+        verificationEmailSent = await issueVerificationEmail({
+          req,
+          userId: user.id,
+          email: user.email,
+        });
+      } catch (emailError) {
+        // Evita usuarios bloqueados sin correo de verificacion enviado.
+        await pool.query('DELETE FROM users WHERE id = $1', [user.id]);
+        const message = emailError?.message ?? 'No se pudo enviar el correo de verificacion';
+        return res.status(502).json({
+          error: `No se pudo enviar el correo de verificacion: ${message}`,
+        });
+      }
     }
 
     res.status(201).json({
@@ -364,7 +373,8 @@ app.post('/auth/v1/signup', async (req, res) => {
     });
   } catch (error) {
     console.error('Signup error', error);
-    res.status(500).json({ error: 'Error interno' });
+    const message = error?.message ?? 'Error interno';
+    res.status(500).json({ error: `Error interno: ${message}` });
   }
 });
 
