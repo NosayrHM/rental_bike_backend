@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../models/user.dart';
 
-const String userBackendUrlOverride = 'http://localhost:4242';
+const String userBackendUrlOverride = 'https://gobike-backend.onrender.com';
 const String _envUserBackendUrl = String.fromEnvironment(
   'USER_BACKEND_URL',
   defaultValue: '',

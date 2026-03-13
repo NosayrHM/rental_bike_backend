@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 
 const String stripePublishableKeyOverride =
     'pk_test_51T1B8XRUYbbTSSSbRm4JfG6cb8kufZfcZmDfl81fL5HdzTSeRopij1cisKnSs5bUxWxxayfVUQITaEwnZ2YsD4n700108L9xR1';
-const String stripeBackendUrlOverride = 'http://localhost:4242';
+const String stripeBackendUrlOverride = 'https://gobike-backend.onrender.com';
 const String _envPublishableKey = String.fromEnvironment(
   'STRIPE_PUBLISHABLE_KEY',
   defaultValue: '',

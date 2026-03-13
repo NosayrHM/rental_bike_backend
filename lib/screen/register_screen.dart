@@ -217,24 +217,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             errorText = 'La contraseña debe tener al menos 6 caracteres.';
                           });
                         } else {
-                          // Registro real contra backend
-                          final registered = await UserService().registerUser(
-                            name: '$name $lastName',
-                            email: email,
-                            password: password,
-                            phone: phone,
-                          );
-                          if (registered) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Registro exitoso. Inicia sesión.')),
+                          try {
+                            // Registro real contra backend
+                            final registered = await UserService().registerUser(
+                              name: '$name $lastName',
+                              email: email,
+                              password: password,
+                              phone: phone,
                             );
-                            Navigator.of(context).pushAndRemoveUntil(
-                              MaterialPageRoute(builder: (_) => LoginScreen()),
-                              (route) => false,
-                            );
-                          } else {
+                            if (registered) {
+                              if (!mounted) {
+                                return;
+                              }
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Registro exitoso. Revisa tu correo y luego inicia sesión.')),
+                              );
+                              Navigator.of(context).pushAndRemoveUntil(
+                                MaterialPageRoute(builder: (_) => LoginScreen()),
+                                (route) => false,
+                              );
+                            } else {
+                              setState(() {
+                                errorText = 'El correo ya está registrado o hubo un error.';
+                              });
+                            }
+                          } catch (e) {
                             setState(() {
-                              errorText = 'El correo ya está registrado o hubo un error.';
+                              errorText = e.toString().replaceFirst('Exception: ', '');
                             });
                           }
                         }
