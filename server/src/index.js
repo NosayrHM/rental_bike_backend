@@ -333,9 +333,19 @@ app.post('/auth/v1/signup', async (req, res) => {
       return res.status(400).json({ error: 'password inválido (mínimo 6 caracteres)' });
     }
 
-    const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase().trim()]);
+    const normalizedEmail = email.toLowerCase().trim();
+    const existing = await pool.query(
+      'SELECT id, email_verified FROM users WHERE email = $1',
+      [normalizedEmail],
+    );
     if (existing.rowCount > 0) {
-      return res.status(409).json({ error: 'El email ya está registrado' });
+      const existingUser = existing.rows[0];
+      if (emailVerificationRequired && !existingUser.email_verified) {
+        // Permite reiniciar registro si la cuenta anterior nunca fue verificada.
+        await pool.query('DELETE FROM users WHERE id = $1', [existingUser.id]);
+      } else {
+        return res.status(409).json({ error: 'El email ya está registrado' });
+      }
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
@@ -345,7 +355,7 @@ app.post('/auth/v1/signup', async (req, res) => {
       VALUES ($1, $2, $3, $4, $5)
       RETURNING id, email, name, phone, email_verified
       `,
-      [email.toLowerCase().trim(), passwordHash, String(name), String(phone), !emailVerificationRequired],
+      [normalizedEmail, passwordHash, String(name), String(phone), !emailVerificationRequired],
     );
 
     const user = inserted.rows[0];
