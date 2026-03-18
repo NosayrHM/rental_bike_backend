@@ -14,6 +14,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   bool _validating = true;
   bool _loadingAdmins = false;
   bool _creating = false;
+  bool _deleting = false;
   String? _error;
   final TextEditingController _nameCtrl = TextEditingController();
   final TextEditingController _emailCtrl = TextEditingController();
@@ -139,6 +140,66 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  Future<void> _deleteAdmin(Map<String, dynamic> adminData) async {
+    final role = adminData['role'] as String? ?? 'admin';
+    final email = adminData['email'] as String? ?? '';
+    if (role != 'admin' || email.isEmpty) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Eliminar administrador'),
+          content: Text('Se eliminará $email y su acceso al sistema. Esta acción no se puede deshacer.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Eliminar'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    setState(() {
+      _deleting = true;
+      _error = null;
+    });
+
+    try {
+      await UserService().deleteAdmin(email);
+      await _loadAdmins();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Administrador eliminado.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deleting = false;
+        });
+      }
+    }
+  }
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -166,6 +227,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           admins: _admins,
           loadingAdmins: _loadingAdmins,
           creating: _creating,
+          deleting: _deleting,
           error: _error,
           nameCtrl: _nameCtrl,
           emailCtrl: _emailCtrl,
@@ -173,6 +235,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           confirmPasswordCtrl: _confirmPasswordCtrl,
           onRefresh: _loadAdmins,
           onCreate: _createAdmin,
+          onDelete: _deleteAdmin,
         ),
       ),
     );
@@ -441,6 +504,7 @@ class _AdminManagementScreen extends StatelessWidget {
     required this.admins,
     required this.loadingAdmins,
     required this.creating,
+    required this.deleting,
     required this.error,
     required this.nameCtrl,
     required this.emailCtrl,
@@ -448,11 +512,13 @@ class _AdminManagementScreen extends StatelessWidget {
     required this.confirmPasswordCtrl,
     required this.onRefresh,
     required this.onCreate,
+    required this.onDelete,
   });
 
   final List<Map<String, dynamic>> admins;
   final bool loadingAdmins;
   final bool creating;
+  final bool deleting;
   final String? error;
   final TextEditingController nameCtrl;
   final TextEditingController emailCtrl;
@@ -460,6 +526,7 @@ class _AdminManagementScreen extends StatelessWidget {
   final TextEditingController confirmPasswordCtrl;
   final Future<void> Function() onRefresh;
   final Future<void> Function() onCreate;
+  final Future<void> Function(Map<String, dynamic> adminData) onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -620,6 +687,7 @@ class _AdminManagementScreen extends StatelessWidget {
                       final email = adm['email'] as String? ?? '';
                       final role = adm['role'] as String? ?? 'admin';
                       final hasLoginAccess = adm['hasLoginAccess'] == true;
+                      final canDelete = role == 'admin' && !deleting;
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.all(12),
@@ -653,6 +721,18 @@ class _AdminManagementScreen extends StatelessWidget {
                                     ),
                                   ),
                                 ],
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: canDelete ? () => onDelete(adm) : null,
+                              tooltip: role == 'admin'
+                                  ? 'Eliminar administrador'
+                                  : 'No se puede eliminar super_admin',
+                              icon: Icon(
+                                Icons.delete_outline,
+                                color: role == 'admin'
+                                    ? const Color(0xFFF87171)
+                                    : const Color(0xFF4B5563),
                               ),
                             ),
                           ],

@@ -344,6 +344,21 @@ class UserService {
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
+  Future<void> deleteAdmin(String email) async {
+    final baseUrl = _resolveBackendUrl();
+    final encodedEmail = Uri.encodeComponent(email.trim().toLowerCase());
+    final uri = Uri.parse('$baseUrl/admin/users/$encodedEmail');
+    final response = await http.delete(
+      uri,
+      headers: await _authorizedHeaders(includeAdminSecret: true),
+    );
+
+    if (response.statusCode >= 400) {
+      final error = jsonDecode(response.body);
+      throw Exception(error['error'] ?? 'No se pudo eliminar admin');
+    }
+  }
+
   void updateCurrentUser({
     String? name,
     String? phone,

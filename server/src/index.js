@@ -1274,6 +1274,51 @@ app.post('/admin/users', async (req, res) => {
   }
 });
 
+app.delete('/admin/users/:email', async (req, res) => {
+  try {
+    const admin = await getAuthenticatedAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+
+    const email = String(req.params.email ?? '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Email inválido' });
+    }
+
+    const existing = await pool.query(
+      'SELECT email, role FROM admins WHERE email = $1 LIMIT 1',
+      [email],
+    );
+
+    if (existing.rowCount === 0) {
+      return res.status(404).json({ error: 'Administrador no encontrado' });
+    }
+
+    const target = existing.rows[0];
+    if (target.role !== 'admin') {
+      return res.status(403).json({ error: 'Solo se pueden eliminar administradores normales' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM users WHERE email = $1', [email]);
+      await client.query('DELETE FROM admins WHERE email = $1', [email]);
+      await client.query('COMMIT');
+      return res.status(204).send();
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Delete admin error', error);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
+
 const port = process.env.PORT ?? 4242;
 ensureSchema()
   .then(() => {
