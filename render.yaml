@@ -37,3 +37,5 @@ services:
         value: true
       - key: EMAIL_VERIFICATION_TOKEN_HOURS
         value: 24
+      - key: ADMIN_PANEL_SECRET
+        sync: false

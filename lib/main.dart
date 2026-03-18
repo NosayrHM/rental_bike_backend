@@ -3,6 +3,7 @@ import 'screen/splash_screen.dart';
 import 'services/user_service.dart';
 import 'screen/main_menu_screen.dart';
 import 'screen/animated_intro_screen.dart';
+import 'screen/admin_dashboard_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,11 +18,6 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'GoBike',
-      locale: const Locale('es', 'ES'),
-      supportedLocales: const <Locale>[
-        Locale('es', 'ES'),
-        Locale('es'),
-      ],
       home: SplashScreenWrapper(),
     );
   }
@@ -38,6 +34,7 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
   bool _loading = true;
   bool _loggedIn = false;
   bool _showAnimation = false;
+  bool _isAdmin = false;
 
   @override
   void initState() {
@@ -47,10 +44,12 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
 
   void _checkLoginAndRestoreUser() async {
     final loggedIn = await UserService().restoreSession();
+    final isAdmin = loggedIn ? await UserService().isCurrentUserAdmin() : false;
     setState(() {
       _loading = false;
       _loggedIn = loggedIn;
       _showAnimation = loggedIn;
+      _isAdmin = isAdmin;
     });
   }
 
@@ -63,13 +62,25 @@ class _SplashScreenWrapperState extends State<SplashScreenWrapper> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return SplashScreen();
+      return const Scaffold(
+        backgroundColor: Color.fromARGB(255, 53, 59, 74),
+        body: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white70,
+            ),
+          ),
+        ),
+      );
     }
     if (_loggedIn) {
       if (_showAnimation) {
-        return AnimatedIntroScreen(onAnimationEnd: _onAnimationEnd);
+        return const AnimatedIntroScreen();
       } else {
-        return MainMenuScreen();
+        return _isAdmin ? const AdminDashboardScreen() : MainMenuScreen();
       }
     } else {
       return SplashScreen();

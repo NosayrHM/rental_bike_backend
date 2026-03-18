@@ -44,6 +44,7 @@ const resendApiKey = process.env.RESEND_API_KEY ?? '';
 const emailFrom = process.env.EMAIL_FROM ?? '';
 const appPublicBaseUrl = process.env.APP_PUBLIC_BASE_URL ?? '';
 const appAuthCallbackUrl = process.env.APP_AUTH_CALLBACK_URL ?? 'myapp://auth-callback';
+const adminPanelSecret = process.env.ADMIN_PANEL_SECRET ?? '';
 
 function normalizeConfiguredBaseUrl(rawValue) {
   const trimmed = String(rawValue ?? '').trim();
@@ -58,6 +59,11 @@ function normalizeConfiguredBaseUrl(rawValue) {
 
 function isEmailDeliveryConfigured() {
   return Boolean(resendApiKey && emailFrom);
+}
+
+function isAdminAuthorized(req) {
+  const incoming = (req.headers['x-admin-secret'] || '').trim();
+  return adminPanelSecret && incoming === adminPanelSecret;
 }
 
 function getBaseUrl(req) {
@@ -274,6 +280,25 @@ async function ensureSchema() {
     );
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_payment_methods_user_id ON payment_methods (user_id);');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS admins (
+      id BIGSERIAL PRIMARY KEY,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      name VARCHAR(120) NOT NULL DEFAULT '',
+      role VARCHAR(40) NOT NULL DEFAULT 'admin',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_admins_email ON admins (email);');
+
+  const defaultAdmin = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+  if (defaultAdmin) {
+    await pool.query(
+      'INSERT INTO admins (email, name, role) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING',
+      [defaultAdmin, defaultAdmin, 'super_admin'],
+    );
+  }
 }
 
 function formatStripeExpiry(month, year) {
@@ -1027,6 +1052,48 @@ app.post('/cancel-subscription', async (req, res) => {
     const status = error.statusCode ?? 500;
     const message = error.message ?? 'Error interno';
     res.status(status).json({ error: message });
+  }
+});
+
+// --- Admin management persistente en BD. Protegido por X-Admin-Secret ---
+app.get('/admin/users', async (req, res) => {
+  if (!isAdminAuthorized(req)) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
+  try {
+    const result = await pool.query('SELECT email, name, role, created_at FROM admins ORDER BY created_at DESC');
+    const list = result.rows.map((r) => ({
+      email: r.email,
+      name: r.name,
+      role: r.role,
+      createdAt: r.created_at,
+    }));
+    return res.json({ admins: list });
+  } catch (error) {
+    console.error('List admins error', error);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+app.post('/admin/users', async (req, res) => {
+  if (!isAdminAuthorized(req)) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const name = String(req.body?.name ?? '').trim();
+  const role = 'admin';
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ error: 'Email inválido' });
+  }
+  try {
+    await pool.query(
+      'INSERT INTO admins (email, name, role) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING',
+      [email, name || email, role],
+    );
+    return res.status(201).json({ email, name: name || email, role });
+  } catch (error) {
+    console.error('Create admin error', error);
+    return res.status(500).json({ error: 'Error interno' });
   }
 });
 
