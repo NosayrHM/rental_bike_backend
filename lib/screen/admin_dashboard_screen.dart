@@ -17,6 +17,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   String? _error;
   final TextEditingController _nameCtrl = TextEditingController();
   final TextEditingController _emailCtrl = TextEditingController();
+  final TextEditingController _passwordCtrl = TextEditingController();
+  final TextEditingController _confirmPasswordCtrl = TextEditingController();
   List<Map<String, dynamic>> _admins = const <Map<String, dynamic>>[];
 
   @override
@@ -84,9 +86,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Future<void> _createAdmin() async {
     final name = _nameCtrl.text.trim();
     final email = _emailCtrl.text.trim();
+    final password = _passwordCtrl.text;
+    final confirmPassword = _confirmPasswordCtrl.text;
     if (name.isEmpty || email.isEmpty || !email.contains('@')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Completa nombre y un email válido.')),
+      );
+      return;
+    }
+    if (password.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('La contraseña debe tener al menos 6 caracteres.')),
+      );
+      return;
+    }
+    if (password != confirmPassword) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Las contraseñas no coinciden.')),
       );
       return;
     }
@@ -96,13 +112,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       _error = null;
     });
     try {
-      await UserService().createAdmin(email: email, name: name);
+      await UserService().createAdmin(email: email, name: name, password: password);
       _nameCtrl.clear();
       _emailCtrl.clear();
+      _passwordCtrl.clear();
+      _confirmPasswordCtrl.clear();
       await _loadAdmins();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Administrador creado.')),
+        const SnackBar(content: Text('Administrador creado con acceso listo para iniciar sesión.')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -125,6 +143,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _emailCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
     super.dispose();
   }
 
@@ -149,6 +169,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           error: _error,
           nameCtrl: _nameCtrl,
           emailCtrl: _emailCtrl,
+          passwordCtrl: _passwordCtrl,
+          confirmPasswordCtrl: _confirmPasswordCtrl,
           onRefresh: _loadAdmins,
           onCreate: _createAdmin,
         ),
@@ -422,6 +444,8 @@ class _AdminManagementScreen extends StatelessWidget {
     required this.error,
     required this.nameCtrl,
     required this.emailCtrl,
+    required this.passwordCtrl,
+    required this.confirmPasswordCtrl,
     required this.onRefresh,
     required this.onCreate,
   });
@@ -432,6 +456,8 @@ class _AdminManagementScreen extends StatelessWidget {
   final String? error;
   final TextEditingController nameCtrl;
   final TextEditingController emailCtrl;
+  final TextEditingController passwordCtrl;
+  final TextEditingController confirmPasswordCtrl;
   final Future<void> Function() onRefresh;
   final Future<void> Function() onCreate;
 
@@ -481,6 +507,38 @@ class _AdminManagementScreen extends StatelessWidget {
                     keyboardType: TextInputType.emailAddress,
                     decoration: const InputDecoration(
                       labelText: 'Email',
+                      labelStyle: TextStyle(color: Color(0xFF9CA3AF)),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFF374151)),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFF60A5FA)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: passwordCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Contraseña inicial',
+                      labelStyle: TextStyle(color: Color(0xFF9CA3AF)),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFF374151)),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFF60A5FA)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: confirmPasswordCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Confirmar contraseña',
                       labelStyle: TextStyle(color: Color(0xFF9CA3AF)),
                       enabledBorder: UnderlineInputBorder(
                         borderSide: BorderSide(color: Color(0xFF374151)),
@@ -561,6 +619,7 @@ class _AdminManagementScreen extends StatelessWidget {
                     ...admins.map((adm) {
                       final email = adm['email'] as String? ?? '';
                       final role = adm['role'] as String? ?? 'admin';
+                      final hasLoginAccess = adm['hasLoginAccess'] == true;
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.all(12),
@@ -584,6 +643,14 @@ class _AdminManagementScreen extends StatelessWidget {
                                   Text(
                                     role,
                                     style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+                                  ),
+                                  Text(
+                                    hasLoginAccess ? 'Acceso listo' : 'Sin acceso todavía',
+                                    style: TextStyle(
+                                      color: hasLoginAccess ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
                                   ),
                                 ],
                               ),

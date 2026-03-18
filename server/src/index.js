@@ -285,6 +285,57 @@ function getAuthenticatedUserId(req, res) {
   }
 }
 
+async function upsertAdminUserAccount(client, { email, name, password }) {
+  const passwordHash = await bcrypt.hash(password, 12);
+  const existingUser = await client.query(
+    'SELECT id FROM users WHERE email = $1',
+    [email],
+  );
+
+  if (existingUser.rowCount === 0) {
+    const created = await client.query(
+      `
+        INSERT INTO users (
+          email,
+          password_hash,
+          name,
+          phone,
+          email_verified,
+          email_verified_at
+        )
+        VALUES ($1, $2, $3, $4, TRUE, NOW())
+        RETURNING id, email, name, email_verified
+      `,
+      [email, passwordHash, name, ''],
+    );
+
+    return {
+      created: true,
+      user: created.rows[0],
+    };
+  }
+
+  const updated = await client.query(
+    `
+      UPDATE users
+      SET
+        password_hash = $2,
+        name = $3,
+        email_verified = TRUE,
+        email_verified_at = COALESCE(email_verified_at, NOW()),
+        updated_at = NOW()
+      WHERE email = $1
+      RETURNING id, email, name, email_verified
+    `,
+    [email, passwordHash, name],
+  );
+
+  return {
+    created: false,
+    user: updated.rows[0],
+  };
+}
+
 async function ensureSchema() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -1133,12 +1184,24 @@ app.get('/admin/users', async (req, res) => {
       return;
     }
 
-    const result = await pool.query('SELECT email, name, role, created_at FROM admins ORDER BY created_at DESC');
+    const result = await pool.query(`
+      SELECT
+        a.email,
+        a.name,
+        a.role,
+        a.created_at,
+        u.id AS user_id,
+        u.email_verified
+      FROM admins a
+      LEFT JOIN users u ON LOWER(u.email) = LOWER(a.email)
+      ORDER BY a.created_at DESC
+    `);
     const list = result.rows.map((r) => ({
       email: r.email,
       name: r.name,
       role: r.role,
       createdAt: r.created_at,
+      hasLoginAccess: Boolean(r.user_id) && Boolean(r.email_verified),
     }));
     return res.json({ admins: list });
   } catch (error) {
@@ -1156,16 +1219,55 @@ app.post('/admin/users', async (req, res) => {
 
     const email = String(req.body?.email ?? '').trim().toLowerCase();
     const name = String(req.body?.name ?? '').trim();
+    const password = String(req.body?.password ?? '');
     const role = 'admin';
     if (!email || !email.includes('@')) {
       return res.status(400).json({ error: 'Email inválido' });
     }
+    if (!name) {
+      return res.status(400).json({ error: 'Nombre obligatorio' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
 
-    await pool.query(
-      'INSERT INTO admins (email, name, role) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING',
-      [email, name || email, role],
-    );
-    return res.status(201).json({ email, name: name || email, role });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const adminResult = await client.query(
+        `
+          INSERT INTO admins (email, name, role)
+          VALUES ($1, $2, $3)
+          ON CONFLICT (email)
+          DO UPDATE SET name = EXCLUDED.name
+          RETURNING email, name, role, created_at
+        `,
+        [email, name, role],
+      );
+
+      const account = await upsertAdminUserAccount(client, {
+        email,
+        name,
+        password,
+      });
+
+      await client.query('COMMIT');
+
+      return res.status(201).json({
+        email: adminResult.rows[0].email,
+        name: adminResult.rows[0].name,
+        role: adminResult.rows[0].role,
+        createdAt: adminResult.rows[0].created_at,
+        hasLoginAccess: true,
+        accountCreated: account.created,
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     console.error('Create admin error', error);
     return res.status(500).json({ error: 'Error interno' });

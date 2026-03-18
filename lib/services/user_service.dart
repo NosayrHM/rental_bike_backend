@@ -319,7 +319,11 @@ class UserService {
     return admins;
   }
 
-  Future<Map<String, dynamic>> createAdmin({required String email, required String name}) async {
+  Future<Map<String, dynamic>> createAdmin({
+    required String email,
+    required String name,
+    required String password,
+  }) async {
     final baseUrl = _resolveBackendUrl();
     final uri = Uri.parse('$baseUrl/admin/users');
     final response = await http.post(
@@ -328,6 +332,7 @@ class UserService {
       body: jsonEncode(<String, String>{
         'email': email,
         'name': name,
+        'password': password,
       }),
     );
 
