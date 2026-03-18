@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/user_service.dart';
+import 'area_laboral_screen.dart';
 import 'splash_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -225,19 +226,25 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       MaterialPageRoute(
         builder: (_) => _AdminManagementScreen(
           admins: _admins,
-          loadingAdmins: _loadingAdmins,
-          creating: _creating,
-          deleting: _deleting,
-          error: _error,
           nameCtrl: _nameCtrl,
           emailCtrl: _emailCtrl,
           passwordCtrl: _passwordCtrl,
           confirmPasswordCtrl: _confirmPasswordCtrl,
-          onRefresh: _loadAdmins,
           onCreate: _createAdmin,
           onDelete: _deleteAdmin,
         ),
       ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+    await _loadAdmins();
+  }
+
+  Future<void> _openWorkArea() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const AreaLaboralScreen()),
     );
   }
 
@@ -324,6 +331,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               accent: Color(0xFF60A5FA),
               icon: Icons.lock,
               onManageAdmins: _openAdminManagement,
+            ),
+            const SizedBox(height: 12),
+            _AdminActionCard(
+              title: 'Area laboral',
+              value: 'Gestión interna',
+              accent: Color(0xFF38BDF8),
+              icon: Icons.work_outline,
+              buttonLabel: 'Gestionar area laboral',
+              onPressed: _openWorkArea,
             ),
             const SizedBox(height: 18),
             ElevatedButton.icon(
@@ -499,34 +515,200 @@ class _AdminAccessCard extends StatelessWidget {
   }
 }
 
-class _AdminManagementScreen extends StatelessWidget {
+class _AdminActionCard extends StatelessWidget {
+  const _AdminActionCard({
+    required this.title,
+    required this.value,
+    required this.accent,
+    required this.icon,
+    required this.buttonLabel,
+    required this.onPressed,
+  });
+
+  final String title;
+  final String value;
+  final Color accent;
+  final IconData icon;
+  final String buttonLabel;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111827),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF1F2937)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: accent.withOpacity(0.2),
+                child: Icon(icon, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onPressed,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: BorderSide(color: accent),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.open_in_new),
+              label: Text(buttonLabel),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminManagementScreen extends StatefulWidget {
   const _AdminManagementScreen({
     required this.admins,
-    required this.loadingAdmins,
-    required this.creating,
-    required this.deleting,
-    required this.error,
     required this.nameCtrl,
     required this.emailCtrl,
     required this.passwordCtrl,
     required this.confirmPasswordCtrl,
-    required this.onRefresh,
     required this.onCreate,
     required this.onDelete,
   });
 
   final List<Map<String, dynamic>> admins;
-  final bool loadingAdmins;
-  final bool creating;
-  final bool deleting;
-  final String? error;
   final TextEditingController nameCtrl;
   final TextEditingController emailCtrl;
   final TextEditingController passwordCtrl;
   final TextEditingController confirmPasswordCtrl;
-  final Future<void> Function() onRefresh;
   final Future<void> Function() onCreate;
   final Future<void> Function(Map<String, dynamic> adminData) onDelete;
+
+  @override
+  State<_AdminManagementScreen> createState() => _AdminManagementScreenState();
+}
+
+class _AdminManagementScreenState extends State<_AdminManagementScreen> {
+  late List<Map<String, dynamic>> _admins;
+  bool _loadingAdmins = false;
+  bool _creating = false;
+  bool _deleting = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _admins = List<Map<String, dynamic>>.from(widget.admins);
+  }
+
+  Future<void> _refreshAdmins() async {
+    setState(() {
+      _loadingAdmins = true;
+      _error = null;
+    });
+
+    try {
+      final admins = await UserService().fetchAdmins();
+      if (!mounted) return;
+      setState(() {
+        _admins = admins;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingAdmins = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleCreate() async {
+    setState(() {
+      _creating = true;
+      _error = null;
+    });
+
+    try {
+      await widget.onCreate();
+      if (!mounted) return;
+      await _refreshAdmins();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _creating = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleDelete(Map<String, dynamic> adminData) async {
+    setState(() {
+      _deleting = true;
+      _error = null;
+    });
+
+    try {
+      await widget.onDelete(adminData);
+      if (!mounted) return;
+      await _refreshAdmins();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deleting = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -554,7 +736,7 @@ class _AdminManagementScreen extends StatelessWidget {
                   _sectionTitle('Registrar administrador'),
                   const SizedBox(height: 8),
                   TextField(
-                    controller: nameCtrl,
+                    controller: widget.nameCtrl,
                     style: const TextStyle(color: Colors.white),
                     decoration: const InputDecoration(
                       labelText: 'Nombre',
@@ -569,7 +751,7 @@ class _AdminManagementScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   TextField(
-                    controller: emailCtrl,
+                    controller: widget.emailCtrl,
                     style: const TextStyle(color: Colors.white),
                     keyboardType: TextInputType.emailAddress,
                     decoration: const InputDecoration(
@@ -585,7 +767,7 @@ class _AdminManagementScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   TextField(
-                    controller: passwordCtrl,
+                    controller: widget.passwordCtrl,
                     style: const TextStyle(color: Colors.white),
                     obscureText: true,
                     decoration: const InputDecoration(
@@ -601,7 +783,7 @@ class _AdminManagementScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   TextField(
-                    controller: confirmPasswordCtrl,
+                    controller: widget.confirmPasswordCtrl,
                     style: const TextStyle(color: Colors.white),
                     obscureText: true,
                     decoration: const InputDecoration(
@@ -625,18 +807,18 @@ class _AdminManagementScreen extends StatelessWidget {
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                           ),
-                          onPressed: creating ? null : () => onCreate(),
+                          onPressed: _creating ? null : _handleCreate,
                           icon: const Icon(Icons.add),
                           label: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
-                              creating ? 'Creando...' : 'Registrar administrador',
+                              _creating ? 'Creando...' : 'Registrar administrador',
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 12),
-                      if (loadingAdmins)
+                      if (_loadingAdmins)
                         const SizedBox(
                           width: 22,
                           height: 22,
@@ -644,10 +826,10 @@ class _AdminManagementScreen extends StatelessWidget {
                         ),
                     ],
                   ),
-                  if (error != null) ...[
+                  if (_error != null) ...[
                     const SizedBox(height: 8),
                     Text(
-                      error!,
+                      _error!,
                       style: const TextStyle(color: Colors.redAccent),
                     ),
                   ],
@@ -669,7 +851,7 @@ class _AdminManagementScreen extends StatelessWidget {
                     children: [
                       const Expanded(child: SizedBox()),
                       IconButton(
-                        onPressed: () => onRefresh(),
+                        onPressed: _loadingAdmins ? null : _refreshAdmins,
                         tooltip: 'Recargar',
                         icon: const Icon(Icons.refresh, color: Colors.white),
                       ),
@@ -677,17 +859,17 @@ class _AdminManagementScreen extends StatelessWidget {
                   ),
                   _sectionTitle('Administradores actuales'),
                   const SizedBox(height: 8),
-                  if (admins.isEmpty && !loadingAdmins)
+                  if (_admins.isEmpty && !_loadingAdmins)
                     const Text(
                       'No hay administradores registrados.',
                       style: TextStyle(color: Color(0xFF9CA3AF)),
                     )
                   else
-                    ...admins.map((adm) {
+                    ..._admins.map((adm) {
                       final email = adm['email'] as String? ?? '';
                       final role = adm['role'] as String? ?? 'admin';
                       final hasLoginAccess = adm['hasLoginAccess'] == true;
-                      final canDelete = role == 'admin' && !deleting;
+                      final canDelete = role == 'admin' && !_deleting;
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         padding: const EdgeInsets.all(12),
@@ -724,7 +906,7 @@ class _AdminManagementScreen extends StatelessWidget {
                               ),
                             ),
                             IconButton(
-                              onPressed: canDelete ? () => onDelete(adm) : null,
+                              onPressed: canDelete ? () => _handleDelete(adm) : null,
                               tooltip: role == 'admin'
                                   ? 'Eliminar administrador'
                                   : 'No se puede eliminar super_admin',

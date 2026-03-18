@@ -359,6 +359,124 @@ class UserService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchEmployeeUsers() async {
+    final baseUrl = _resolveBackendUrl();
+    final uri = Uri.parse('$baseUrl/admin/workforce/employees');
+    final response = await http.get(
+      uri,
+      headers: await _authorizedHeaders(includeAdminSecret: true),
+    );
+
+    if (response.statusCode >= 400) {
+      final error = jsonDecode(response.body);
+      throw Exception(error['error'] ?? 'No se pudieron cargar empleados');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return (data['employees'] as List<dynamic>? ?? <dynamic>[])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> createEmployeeUser({
+    required String email,
+    required String name,
+    required String password,
+  }) async {
+    final baseUrl = _resolveBackendUrl();
+    final uri = Uri.parse('$baseUrl/admin/workforce/employees');
+    final response = await http.post(
+      uri,
+      headers: await _authorizedHeaders(includeAdminSecret: true),
+      body: jsonEncode(<String, String>{
+        'email': email,
+        'name': name,
+        'password': password,
+      }),
+    );
+
+    if (response.statusCode >= 400) {
+      final error = jsonDecode(response.body);
+      throw Exception(error['error'] ?? 'No se pudo crear el empleado');
+    }
+
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<void> deleteEmployeeUser(String email) async {
+    final baseUrl = _resolveBackendUrl();
+    final encodedEmail = Uri.encodeComponent(email.trim().toLowerCase());
+    final uri = Uri.parse('$baseUrl/admin/workforce/employees/$encodedEmail');
+    final response = await http.delete(
+      uri,
+      headers: await _authorizedHeaders(includeAdminSecret: true),
+    );
+
+    if (response.statusCode >= 400) {
+      final error = jsonDecode(response.body);
+      throw Exception(error['error'] ?? 'No se pudo eliminar el empleado');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchStoreUsers() async {
+    final baseUrl = _resolveBackendUrl();
+    final uri = Uri.parse('$baseUrl/admin/workforce/store-users');
+    final response = await http.get(
+      uri,
+      headers: await _authorizedHeaders(includeAdminSecret: true),
+    );
+
+    if (response.statusCode >= 400) {
+      final error = jsonDecode(response.body);
+      throw Exception(error['error'] ?? 'No se pudieron cargar usuarios de tienda');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return (data['storeUsers'] as List<dynamic>? ?? <dynamic>[])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> createStoreUser({
+    required String email,
+    required String name,
+    required String password,
+  }) async {
+    final baseUrl = _resolveBackendUrl();
+    final uri = Uri.parse('$baseUrl/admin/workforce/store-users');
+    final response = await http.post(
+      uri,
+      headers: await _authorizedHeaders(includeAdminSecret: true),
+      body: jsonEncode(<String, String>{
+        'email': email,
+        'name': name,
+        'password': password,
+      }),
+    );
+
+    if (response.statusCode >= 400) {
+      final error = jsonDecode(response.body);
+      throw Exception(error['error'] ?? 'No se pudo crear el usuario de tienda');
+    }
+
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<void> deleteStoreUser(String email) async {
+    final baseUrl = _resolveBackendUrl();
+    final encodedEmail = Uri.encodeComponent(email.trim().toLowerCase());
+    final uri = Uri.parse('$baseUrl/admin/workforce/store-users/$encodedEmail');
+    final response = await http.delete(
+      uri,
+      headers: await _authorizedHeaders(includeAdminSecret: true),
+    );
+
+    if (response.statusCode >= 400) {
+      final error = jsonDecode(response.body);
+      throw Exception(error['error'] ?? 'No se pudo eliminar el usuario de tienda');
+    }
+  }
+
   void updateCurrentUser({
     String? name,
     String? phone,

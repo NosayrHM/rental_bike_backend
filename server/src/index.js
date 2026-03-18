@@ -285,7 +285,7 @@ function getAuthenticatedUserId(req, res) {
   }
 }
 
-async function upsertAdminUserAccount(client, { email, name, password }) {
+async function upsertLoginReadyUserAccount(client, { email, name, password }) {
   const passwordHash = await bcrypt.hash(password, 12);
   const existingUser = await client.query(
     'SELECT id FROM users WHERE email = $1',
@@ -334,6 +334,27 @@ async function upsertAdminUserAccount(client, { email, name, password }) {
     created: false,
     user: updated.rows[0],
   };
+}
+
+async function listWorkforceEntries(tableName) {
+  const result = await pool.query(`
+    SELECT
+      w.email,
+      w.name,
+      w.created_at,
+      u.id AS user_id,
+      u.email_verified
+    FROM ${tableName} w
+    LEFT JOIN users u ON LOWER(u.email) = LOWER(w.email)
+    ORDER BY w.created_at DESC
+  `);
+
+  return result.rows.map((row) => ({
+    email: row.email,
+    name: row.name,
+    createdAt: row.created_at,
+    hasLoginAccess: Boolean(row.user_id) && Boolean(row.email_verified),
+  }));
 }
 
 async function ensureSchema() {
@@ -392,6 +413,26 @@ async function ensureSchema() {
     );
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS idx_admins_email ON admins (email);');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS employee_users (
+      id BIGSERIAL PRIMARY KEY,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      name VARCHAR(120) NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_employee_users_email ON employee_users (email);');
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS store_users (
+      id BIGSERIAL PRIMARY KEY,
+      email VARCHAR(255) NOT NULL UNIQUE,
+      name VARCHAR(120) NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS idx_store_users_email ON store_users (email);');
 
   const defaultAdmin = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
   if (defaultAdmin) {
@@ -1246,7 +1287,7 @@ app.post('/admin/users', async (req, res) => {
         [email, name, role],
       );
 
-      const account = await upsertAdminUserAccount(client, {
+      const account = await upsertLoginReadyUserAccount(client, {
         email,
         name,
         password,
@@ -1270,6 +1311,220 @@ app.post('/admin/users', async (req, res) => {
     }
   } catch (error) {
     console.error('Create admin error', error);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+app.get('/admin/workforce/employees', async (req, res) => {
+  try {
+    const admin = await getAuthenticatedAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+
+    const employees = await listWorkforceEntries('employee_users');
+    return res.json({ employees });
+  } catch (error) {
+    console.error('List employee users error', error);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+app.post('/admin/workforce/employees', async (req, res) => {
+  try {
+    const admin = await getAuthenticatedAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+
+    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const name = String(req.body?.name ?? '').trim();
+    const password = String(req.body?.password ?? '');
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Email inválido' });
+    }
+    if (!name) {
+      return res.status(400).json({ error: 'Nombre obligatorio' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const workforceResult = await client.query(
+        `
+          INSERT INTO employee_users (email, name)
+          VALUES ($1, $2)
+          ON CONFLICT (email)
+          DO UPDATE SET name = EXCLUDED.name
+          RETURNING email, name, created_at
+        `,
+        [email, name],
+      );
+
+      await upsertLoginReadyUserAccount(client, { email, name, password });
+      await client.query('COMMIT');
+
+      return res.status(201).json({
+        email: workforceResult.rows[0].email,
+        name: workforceResult.rows[0].name,
+        createdAt: workforceResult.rows[0].created_at,
+        hasLoginAccess: true,
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Create employee user error', error);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+app.delete('/admin/workforce/employees/:email', async (req, res) => {
+  try {
+    const admin = await getAuthenticatedAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+
+    const email = String(req.params.email ?? '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Email inválido' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const existing = await client.query('SELECT id FROM employee_users WHERE email = $1 LIMIT 1', [email]);
+      if (existing.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Empleado no encontrado' });
+      }
+
+      await client.query('DELETE FROM users WHERE email = $1', [email]);
+      await client.query('DELETE FROM employee_users WHERE email = $1', [email]);
+      await client.query('COMMIT');
+      return res.status(204).send();
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Delete employee user error', error);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+app.get('/admin/workforce/store-users', async (req, res) => {
+  try {
+    const admin = await getAuthenticatedAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+
+    const storeUsers = await listWorkforceEntries('store_users');
+    return res.json({ storeUsers });
+  } catch (error) {
+    console.error('List store users error', error);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+app.post('/admin/workforce/store-users', async (req, res) => {
+  try {
+    const admin = await getAuthenticatedAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+
+    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const name = String(req.body?.name ?? '').trim();
+    const password = String(req.body?.password ?? '');
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Email inválido' });
+    }
+    if (!name) {
+      return res.status(400).json({ error: 'Nombre obligatorio' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const workforceResult = await client.query(
+        `
+          INSERT INTO store_users (email, name)
+          VALUES ($1, $2)
+          ON CONFLICT (email)
+          DO UPDATE SET name = EXCLUDED.name
+          RETURNING email, name, created_at
+        `,
+        [email, name],
+      );
+
+      await upsertLoginReadyUserAccount(client, { email, name, password });
+      await client.query('COMMIT');
+
+      return res.status(201).json({
+        email: workforceResult.rows[0].email,
+        name: workforceResult.rows[0].name,
+        createdAt: workforceResult.rows[0].created_at,
+        hasLoginAccess: true,
+      });
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Create store user error', error);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+app.delete('/admin/workforce/store-users/:email', async (req, res) => {
+  try {
+    const admin = await getAuthenticatedAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+
+    const email = String(req.params.email ?? '').trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Email inválido' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const existing = await client.query('SELECT id FROM store_users WHERE email = $1 LIMIT 1', [email]);
+      if (existing.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Usuario de tienda no encontrado' });
+      }
+
+      await client.query('DELETE FROM users WHERE email = $1', [email]);
+      await client.query('DELETE FROM store_users WHERE email = $1', [email]);
+      await client.query('COMMIT');
+      return res.status(204).send();
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Delete store user error', error);
     return res.status(500).json({ error: 'Error interno' });
   }
 });
