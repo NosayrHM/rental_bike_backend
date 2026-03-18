@@ -493,15 +493,22 @@ class _AdminManagementScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF60A5FA),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF60A5FA),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          ),
+                          onPressed: creating ? null : () => onCreate(),
+                          icon: const Icon(Icons.add),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              creating ? 'Creando...' : 'Registrar administrador',
+                            ),
+                          ),
                         ),
-                        onPressed: creating ? null : () => onCreate(),
-                        icon: const Icon(Icons.add),
-                        label: Text(creating ? 'Creando...' : 'Registrar administrador'),
                       ),
                       const SizedBox(width: 12),
                       if (loadingAdmins)
