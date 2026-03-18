@@ -61,9 +61,59 @@ function isEmailDeliveryConfigured() {
   return Boolean(resendApiKey && emailFrom);
 }
 
-function isAdminAuthorized(req) {
+function hasValidAdminSecret(req) {
   const incoming = (req.headers['x-admin-secret'] || '').trim();
   return adminPanelSecret && incoming === adminPanelSecret;
+}
+
+async function getAuthenticatedAdmin(req, res) {
+  if (hasValidAdminSecret(req)) {
+    return {
+      email: (process.env.ADMIN_EMAIL || '').trim().toLowerCase(),
+      role: 'super_admin',
+      viaSecret: true,
+    };
+  }
+
+  const token = parseBearerToken(req);
+  if (!token) {
+    res.status(401).json({ error: 'Token faltante' });
+    return null;
+  }
+
+  let userId;
+  try {
+    const payload = jwt.verify(token, jwtSecret);
+    userId = Number(payload?.sub);
+    if (!Number.isFinite(userId)) {
+      res.status(401).json({ error: 'Token inválido' });
+      return null;
+    }
+  } catch {
+    res.status(401).json({ error: 'Token inválido o expirado' });
+    return null;
+  }
+
+  const adminResult = await pool.query(
+    `
+      SELECT a.email, a.role, a.name
+      FROM users u
+      INNER JOIN admins a ON LOWER(a.email) = LOWER(u.email)
+      WHERE u.id = $1
+      LIMIT 1
+    `,
+    [userId],
+  );
+
+  if (adminResult.rowCount === 0) {
+    res.status(403).json({ error: 'Tu usuario no tiene permisos de administrador' });
+    return null;
+  }
+
+  return {
+    ...adminResult.rows[0],
+    viaSecret: false,
+  };
 }
 
 function getBaseUrl(req) {
@@ -1055,12 +1105,34 @@ app.post('/cancel-subscription', async (req, res) => {
   }
 });
 
-// --- Admin management persistente en BD. Protegido por X-Admin-Secret ---
-app.get('/admin/users', async (req, res) => {
-  if (!isAdminAuthorized(req)) {
-    return res.status(401).json({ error: 'No autorizado' });
-  }
+// --- Admin management persistente en BD. Protegido por sesión admin o X-Admin-Secret ---
+app.get('/admin/me', async (req, res) => {
   try {
+    const admin = await getAuthenticatedAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+
+    return res.json({
+      admin: {
+        email: admin.email,
+        role: admin.role,
+        viaSecret: admin.viaSecret,
+      },
+    });
+  } catch (error) {
+    console.error('Admin me error', error);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+});
+
+app.get('/admin/users', async (req, res) => {
+  try {
+    const admin = await getAuthenticatedAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+
     const result = await pool.query('SELECT email, name, role, created_at FROM admins ORDER BY created_at DESC');
     const list = result.rows.map((r) => ({
       email: r.email,
@@ -1076,16 +1148,19 @@ app.get('/admin/users', async (req, res) => {
 });
 
 app.post('/admin/users', async (req, res) => {
-  if (!isAdminAuthorized(req)) {
-    return res.status(401).json({ error: 'No autorizado' });
-  }
-  const email = String(req.body?.email ?? '').trim().toLowerCase();
-  const name = String(req.body?.name ?? '').trim();
-  const role = 'admin';
-  if (!email || !email.includes('@')) {
-    return res.status(400).json({ error: 'Email inválido' });
-  }
   try {
+    const admin = await getAuthenticatedAdmin(req, res);
+    if (!admin) {
+      return;
+    }
+
+    const email = String(req.body?.email ?? '').trim().toLowerCase();
+    const name = String(req.body?.name ?? '').trim();
+    const role = 'admin';
+    if (!email || !email.includes('@')) {
+      return res.status(400).json({ error: 'Email inválido' });
+    }
+
     await pool.query(
       'INSERT INTO admins (email, name, role) VALUES ($1, $2, $3) ON CONFLICT (email) DO NOTHING',
       [email, name || email, role],

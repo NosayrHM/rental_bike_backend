@@ -139,6 +139,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  Future<void> _openAdminManagement() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _AdminManagementScreen(
+          admins: _admins,
+          loadingAdmins: _loadingAdmins,
+          creating: _creating,
+          error: _error,
+          nameCtrl: _nameCtrl,
+          emailCtrl: _emailCtrl,
+          onRefresh: _loadAdmins,
+          onCreate: _createAdmin,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_validating) {
@@ -202,8 +219,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            _buildAdminManager(),
-            const SizedBox(height: 16),
             const _AdminCard(
               title: 'Estado del sistema',
               value: 'Operativo',
@@ -218,11 +233,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               icon: Icons.people_alt,
             ),
             const SizedBox(height: 12),
-            const _AdminCard(
+            _AdminAccessCard(
               title: 'Acceso',
               value: 'Solo email autorizado',
               accent: Color(0xFF60A5FA),
               icon: Icons.lock,
+              onManageAdmins: _openAdminManagement,
             ),
             const SizedBox(height: 18),
             ElevatedButton.icon(
@@ -315,8 +331,23 @@ class _AdminCard extends StatelessWidget {
   }
 }
 
-extension on _AdminDashboardScreenState {
-  Widget _buildAdminManager() {
+class _AdminAccessCard extends StatelessWidget {
+  const _AdminAccessCard({
+    required this.title,
+    required this.value,
+    required this.accent,
+    required this.icon,
+    required this.onManageAdmins,
+  });
+
+  final String title;
+  final String value;
+  final Color accent;
+  final IconData icon;
+  final VoidCallback onManageAdmins;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -327,106 +358,238 @@ extension on _AdminDashboardScreenState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionTitle('Gestión de administradores'),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _nameCtrl,
-            style: const TextStyle(color: Colors.white),
-            decoration: const InputDecoration(
-              labelText: 'Nombre',
-              labelStyle: TextStyle(color: Color(0xFF9CA3AF)),
-              enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Color(0xFF374151)),
-              ),
-              focusedBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Color(0xFF60A5FA)),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _emailCtrl,
-            style: const TextStyle(color: Colors.white),
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(
-              labelText: 'Email',
-              labelStyle: TextStyle(color: Color(0xFF9CA3AF)),
-              enabledBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Color(0xFF374151)),
-              ),
-              focusedBorder: UnderlineInputBorder(
-                borderSide: BorderSide(color: Color(0xFF60A5FA)),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
           Row(
             children: [
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF60A5FA),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                ),
-                onPressed: _creating ? null : _createAdmin,
-                icon: const Icon(Icons.add),
-                label: Text(_creating ? 'Creando...' : 'Registrar Administrador'),
+              CircleAvatar(
+                backgroundColor: accent.withOpacity(0.2),
+                child: Icon(icon, color: accent),
               ),
               const SizedBox(width: 12),
-              if (_loadingAdmins) const CircularProgressIndicator(strokeWidth: 2.2),
-            ],
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              _error!,
-              style: const TextStyle(color: Colors.redAccent),
-            ),
-          ],
-          const SizedBox(height: 16),
-          _sectionTitle('Administradores actuales'),
-          const SizedBox(height: 8),
-          if (_admins.isEmpty && !_loadingAdmins)
-            const Text(
-              'No hay administradores registrados.',
-              style: TextStyle(color: Color(0xFF9CA3AF)),
-            )
-          else
-            ..._admins.map((adm) {
-              final email = adm['email'] as String? ?? '';
-              final role = adm['role'] as String? ?? 'admin';
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF0B1220),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF1F2937)),
-                ),
-                child: Row(
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.verified_user, color: Color(0xFF60A5FA)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            email,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
-                          ),
-                          Text(
-                            role,
-                            style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
-                          ),
-                        ],
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
                 ),
-              );
-            }),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onManageAdmins,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Color(0xFF60A5FA)),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              icon: const Icon(Icons.admin_panel_settings_outlined),
+              label: const Text('Gestionar administradores'),
+            ),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _AdminManagementScreen extends StatelessWidget {
+  const _AdminManagementScreen({
+    required this.admins,
+    required this.loadingAdmins,
+    required this.creating,
+    required this.error,
+    required this.nameCtrl,
+    required this.emailCtrl,
+    required this.onRefresh,
+    required this.onCreate,
+  });
+
+  final List<Map<String, dynamic>> admins;
+  final bool loadingAdmins;
+  final bool creating;
+  final String? error;
+  final TextEditingController nameCtrl;
+  final TextEditingController emailCtrl;
+  final Future<void> Function() onRefresh;
+  final Future<void> Function() onCreate;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F172A),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF111827),
+        foregroundColor: Colors.white,
+        title: const Text('Gestión de administradores'),
+      ),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF111827),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF1F2937)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionTitle('Registrar administrador'),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: nameCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre',
+                      labelStyle: TextStyle(color: Color(0xFF9CA3AF)),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFF374151)),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFF60A5FA)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: emailCtrl,
+                    style: const TextStyle(color: Colors.white),
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      labelStyle: TextStyle(color: Color(0xFF9CA3AF)),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFF374151)),
+                      ),
+                      focusedBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFF60A5FA)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF60A5FA),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        ),
+                        onPressed: creating ? null : () => onCreate(),
+                        icon: const Icon(Icons.add),
+                        label: Text(creating ? 'Creando...' : 'Registrar administrador'),
+                      ),
+                      const SizedBox(width: 12),
+                      if (loadingAdmins)
+                        const SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2.2),
+                        ),
+                    ],
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      error!,
+                      style: const TextStyle(color: Colors.redAccent),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF111827),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF1F2937)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Expanded(child: SizedBox()),
+                      IconButton(
+                        onPressed: () => onRefresh(),
+                        tooltip: 'Recargar',
+                        icon: const Icon(Icons.refresh, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  _sectionTitle('Administradores actuales'),
+                  const SizedBox(height: 8),
+                  if (admins.isEmpty && !loadingAdmins)
+                    const Text(
+                      'No hay administradores registrados.',
+                      style: TextStyle(color: Color(0xFF9CA3AF)),
+                    )
+                  else
+                    ...admins.map((adm) {
+                      final email = adm['email'] as String? ?? '';
+                      final role = adm['role'] as String? ?? 'admin';
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0B1220),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFF1F2937)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.verified_user, color: Color(0xFF60A5FA)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    email,
+                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                                  ),
+                                  Text(
+                                    role,
+                                    style: const TextStyle(color: Color(0xFF9CA3AF), fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

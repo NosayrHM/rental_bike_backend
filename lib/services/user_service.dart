@@ -24,11 +24,49 @@ class UserService {
   String get adminEmail => _envAdminEmail.trim().toLowerCase();
   String get adminPanelSecret => _envAdminPanelSecret;
 
+  Future<Map<String, String>> _authorizedHeaders({bool includeAdminSecret = false}) async {
+    final headers = <String, String>{
+      'Content-Type': 'application/json',
+    };
+
+    final token = await getToken();
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    if (includeAdminSecret && adminPanelSecret.isNotEmpty) {
+      headers['x-admin-secret'] = adminPanelSecret;
+    }
+
+    return headers;
+  }
+
   bool isAdminEmail(String email) {
     return email.trim().toLowerCase() == adminEmail;
   }
 
   Future<bool> isCurrentUserAdmin() async {
+    final token = await getToken();
+    if (token != null && token.isNotEmpty) {
+      try {
+        final baseUrl = _resolveBackendUrl();
+        final uri = Uri.parse('$baseUrl/admin/me');
+        final response = await http.get(
+          uri,
+          headers: await _authorizedHeaders(includeAdminSecret: true),
+        );
+
+        if (response.statusCode == 200) {
+          return true;
+        }
+        if (response.statusCode == 401 || response.statusCode == 403) {
+          return false;
+        }
+      } catch (_) {
+        // Si el backend no está accesible, cae al criterio local para no romper la sesión.
+      }
+    }
+
     final current = _currentUser?.email;
     if (current != null && current.isNotEmpty) {
       return isAdminEmail(current);
@@ -264,10 +302,10 @@ class UserService {
   Future<List<Map<String, dynamic>>> fetchAdmins() async {
     final baseUrl = _resolveBackendUrl();
     final uri = Uri.parse('$baseUrl/admin/users');
-    final response = await http.get(uri, headers: {
-      'Content-Type': 'application/json',
-      if (adminPanelSecret.isNotEmpty) 'x-admin-secret': adminPanelSecret,
-    });
+    final response = await http.get(
+      uri,
+      headers: await _authorizedHeaders(includeAdminSecret: true),
+    );
 
     if (response.statusCode >= 400) {
       final error = jsonDecode(response.body);
@@ -286,10 +324,7 @@ class UserService {
     final uri = Uri.parse('$baseUrl/admin/users');
     final response = await http.post(
       uri,
-      headers: {
-        'Content-Type': 'application/json',
-        if (adminPanelSecret.isNotEmpty) 'x-admin-secret': adminPanelSecret,
-      },
+      headers: await _authorizedHeaders(includeAdminSecret: true),
       body: jsonEncode(<String, String>{
         'email': email,
         'name': name,
