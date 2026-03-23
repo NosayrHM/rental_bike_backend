@@ -1238,8 +1238,10 @@ app.get('/admin/metrics/stripe/income', async (req, res) => {
       }
     }
 
-    const byDay = new Map();
-    let total = 0;
+    const grossByDay = new Map();
+    const feeByDay = new Map();
+    let totalGross = 0;
+    let totalFees = 0;
     let currency = 'usd';
     for (const txn of transactions) {
       if (!txn || typeof txn.amount !== 'number') {
@@ -1247,21 +1249,41 @@ app.get('/admin/metrics/stripe/income', async (req, res) => {
       }
       currency = txn.currency ?? currency;
       const amount = txn.amount / 100;
+      const fee = typeof txn.fee === 'number' ? txn.fee / 100 : 0;
       const date = new Date((txn.created ?? now) * 1000).toISOString().slice(0, 10);
-      const current = byDay.get(date) ?? 0;
-      byDay.set(date, current + amount);
-      total += amount;
+
+      const currentGross = grossByDay.get(date) ?? 0;
+      grossByDay.set(date, currentGross + amount);
+
+      const currentFee = feeByDay.get(date) ?? 0;
+      feeByDay.set(date, currentFee + fee);
+
+      totalGross += amount;
+      totalFees += fee;
     }
 
-    const daysSeries = Array.from(byDay.entries())
+    const daysSeries = Array.from(grossByDay.entries())
       .map(([date, amount]) => ({ date, amount }))
       .sort((a, b) => a.date.localeCompare(b.date));
+
+    const feesSeries = Array.from(feeByDay.entries())
+      .map(([date, amount]) => ({ date, amount }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const netSeries = daysSeries.map((entry) => {
+      const feeEntry = feeByDay.get(entry.date) ?? 0;
+      return { date: entry.date, amount: entry.amount - feeEntry };
+    });
 
     return res.json({
       currency,
       days,
-      total,
+      total: totalGross,
+      totalFees,
+      totalNet: totalGross - totalFees,
       series: daysSeries,
+      feeSeries: feesSeries,
+      netSeries,
       generatedAt: new Date().toISOString(),
     });
   } catch (error) {
