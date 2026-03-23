@@ -252,6 +252,14 @@ function requireStripe(res) {
   return false;
 }
 
+function assertAdminAndStripe(req, res) {
+  return getAuthenticatedAdmin(req, res).then((admin) => {
+    if (!admin) return null;
+    if (!requireStripe(res)) return null;
+    return admin;
+  });
+}
+
 function signAccessToken(userId) {
   return jwt.sign({ sub: userId }, jwtSecret, { expiresIn: tokenExpirySeconds });
 }
@@ -1194,6 +1202,73 @@ app.post('/cancel-subscription', async (req, res) => {
     const status = error.statusCode ?? 500;
     const message = error.message ?? 'Error interno';
     res.status(status).json({ error: message });
+  }
+});
+
+app.get('/admin/metrics/stripe/income', async (req, res) => {
+  try {
+    const admin = await assertAdminAndStripe(req, res);
+    if (!admin) {
+      return;
+    }
+
+    const daysParam = Number(req.query.days ?? '30');
+    const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 180 ? Math.floor(daysParam) : 30;
+    const now = Math.floor(Date.now() / 1000);
+    const since = now - days * 24 * 60 * 60;
+
+    const transactions = [];
+    let startingAfter = undefined;
+    // Bounded pagination to avoid excessive calls; adjust if volume grows.
+    for (let i = 0; i < 5; i += 1) {
+      const page = await stripe.balanceTransactions.list({
+        limit: 100,
+        created: { gte: since },
+        type: 'charge',
+        ...(startingAfter ? { starting_after: startingAfter } : {}),
+      });
+
+      transactions.push(...page.data);
+      if (!page.has_more) {
+        break;
+      }
+      startingAfter = page.data[page.data.length - 1]?.id;
+      if (!startingAfter) {
+        break;
+      }
+    }
+
+    const byDay = new Map();
+    let total = 0;
+    let currency = 'usd';
+    for (const txn of transactions) {
+      if (!txn || typeof txn.amount !== 'number') {
+        continue;
+      }
+      currency = txn.currency ?? currency;
+      const amount = txn.amount / 100;
+      const date = new Date((txn.created ?? now) * 1000).toISOString().slice(0, 10);
+      const current = byDay.get(date) ?? 0;
+      byDay.set(date, current + amount);
+      total += amount;
+    }
+
+    const daysSeries = Array.from(byDay.entries())
+      .map(([date, amount]) => ({ date, amount }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return res.json({
+      currency,
+      days,
+      total,
+      series: daysSeries,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Stripe income metrics error', error);
+    const status = error.statusCode ?? 500;
+    const message = error.message ?? 'Error interno';
+    return res.status(status).json({ error: message });
   }
 });
 
