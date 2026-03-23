@@ -9,7 +9,7 @@ import crypto from 'crypto';
 
 const { Pool } = pg;
 
-const databaseUrl = process.env.DATABASE_URL ?? '';
+const databaseUrl = process.env.DATABASE_URL ?? 'postgresql://gobike_user:ei1RlYHPx53qoT5Xe9XCQKFKDCBzCUbp@dpg-d6t7sq4hg0os73fkpqs0-a/gobike_11wg';
 if (!databaseUrl) {
   console.error('⚠️  Define DATABASE_URL en tu archivo .env');
   process.exit(1);
@@ -42,7 +42,7 @@ const emailVerificationExpiryHours = Number(process.env.EMAIL_VERIFICATION_TOKEN
 const emailVerificationRequired = (process.env.EMAIL_VERIFICATION_REQUIRED ?? 'true') === 'true';
 const resendApiKey = process.env.RESEND_API_KEY ?? '';
 const emailFrom = process.env.EMAIL_FROM ?? '';
-const appPublicBaseUrl = process.env.APP_PUBLIC_BASE_URL ?? '';
+const appPublicBaseUrl = process.env.APP_PUBLIC_BASE_URL ?? 'https://www.rentalbike.app';
 const appAuthCallbackUrl = process.env.APP_AUTH_CALLBACK_URL ?? 'myapp://auth-callback';
 const adminPanelSecret = process.env.ADMIN_PANEL_SECRET ?? '';
 
